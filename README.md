@@ -58,6 +58,7 @@ bun run typecheck
 | `CLUES_DB`    | `$DATA_DIR/clues.db` | Override the clue database path.                                    |
 | `PORT`/`HOST` | `3000`/`127.0.0.1` | Listen address (`0.0.0.0` in the Docker image).                       |
 | `TRUST_PROXY` | `0` (`1` in Docker) | Number of reverse proxies in front; the client IP is read that many hops from the right of `X-Forwarded-For`. |
+| `CLIENT_IP_HEADER` + `CLIENT_IP_HEADER_FROM` | empty | Behind a CDN, e.g. `cf-connecting-ip` + `cloudflare`. The header is trusted only from those edge ranges. |
 
 The server works whether or not the reverse proxy strips `BASE_PATH`.
 

@@ -19,6 +19,7 @@ import {
   wrongCells,
 } from "./puzzles";
 import { Store, type PuzzleRecord, type SessionRecord } from "./store";
+import { edgeBlockList, inEdge } from "./edges";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? "127.0.0.1";
@@ -28,6 +29,9 @@ const CLUES_DB = resolve(process.env.CLUES_DB ?? join(DATA_DIR, "clues.db"));
 const DIST_DIR = resolve(process.env.DIST_DIR ?? "dist");
 /** Reverse proxies in front of us; the client IP is read this many hops from the right of X-Forwarded-For. */
 const TRUST_PROXY = Number(process.env.TRUST_PROXY ?? 0);
+/** CDN header carrying the visitor address (e.g. cf-connecting-ip), trusted only from CLIENT_IP_HEADER_FROM edges. */
+const CLIENT_IP_HEADER = (process.env.CLIENT_IP_HEADER ?? "").trim().toLowerCase();
+const CLIENT_IP_EDGES = edgeBlockList(process.env.CLIENT_IP_HEADER_FROM ?? "");
 /** Ranked daily scores accepted per IP per day, so one network cannot flood the board. */
 const SCORES_PER_IP = 3;
 const INITIALS = /^[A-Za-z]{3}$/;
@@ -59,8 +63,15 @@ const json = (body: unknown, status = 200) =>
 
 function clientIp(req: Request, server: Bun.Server<undefined>): string {
   const forwarded = (req.headers.get("x-forwarded-for") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-  if (TRUST_PROXY > 0 && forwarded.length >= TRUST_PROXY) return forwarded[forwarded.length - TRUST_PROXY]!;
-  return server.requestIP(req)?.address ?? "unknown";
+  const peer =
+    TRUST_PROXY > 0 && forwarded.length >= TRUST_PROXY
+      ? forwarded[forwarded.length - TRUST_PROXY]!
+      : (server.requestIP(req)?.address ?? "unknown");
+  if (CLIENT_IP_HEADER && CLIENT_IP_EDGES && inEdge(CLIENT_IP_EDGES, peer)) {
+    const visitor = req.headers.get(CLIENT_IP_HEADER)?.trim();
+    if (visitor) return visitor;
+  }
+  return peer;
 }
 
 const hashIp = (ip: string) => new Bun.CryptoHasher("sha256").update(salt + ip).digest("hex").slice(0, 32);
