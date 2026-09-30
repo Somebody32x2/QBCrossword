@@ -22,6 +22,7 @@
     "build": "vite build",
     "start": "bun server/index.ts",
     "ingest": "bun scripts/ingest.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
   }
 }

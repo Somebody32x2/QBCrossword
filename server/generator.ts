@@ -146,11 +146,11 @@ class Grid {
   }
 }
 
+/** Greedy build; `pool[0]` is the spine, placed across the middle row. */
 function buildOnce(pool: string[], size: number, target: number, rng: Rng): Grid | null {
+  const [first, ...remaining] = pool;
+  if (!first) return null;
   const grid = new Grid(size);
-  const firstIdx = pool.findIndex((w) => w.length >= Math.ceil(size * 0.55));
-  if (firstIdx < 0) return null;
-  const first = pool[firstIdx]!;
   const row = Math.floor(size / 2);
   const col = Math.floor(rng() * (size - first.length + 1));
   grid.place(first, row, col, "across");
@@ -158,7 +158,6 @@ function buildOnce(pool: string[], size: number, target: number, rng: Rng): Grid
   // Each step considers the next WINDOW placeable words and keeps the one that
   // crosses the most entries, which packs grids far tighter than first-fit.
   const WINDOW = 24;
-  const remaining = pool.filter((_, i) => i !== firstIdx);
   while (grid.placements.length < target) {
     let bestIdx = -1;
     let bestSpot: Spot | null = null;
@@ -194,8 +193,10 @@ export function generateLayout(pool: string[], size: number, rng: Rng, attempts 
   let bestScore = -Infinity;
   for (let a = 0; a < attempts; a++) {
     const sample = shuffle(fitting.slice(0, sampleSize + a * target), rng).slice(0, sampleSize);
-    // A long entry first gives the grid a spine; the rest stay in weighted-random order.
-    const spine = sample.findIndex((w) => w.length >= Math.ceil(size * 0.55));
+    // A long entry first gives the grid a spine (the longest word if none is long);
+    // the rest stay in weighted-random order.
+    let spine = sample.findIndex((w) => w.length >= Math.ceil(size * 0.55));
+    if (spine < 0) spine = sample.reduce((best, w, i) => (w.length > sample[best]!.length ? i : best), 0);
     if (spine > 0) sample.unshift(...sample.splice(spine, 1));
     const grid = buildOnce(sample, size, target, rng);
     if (!grid) continue;

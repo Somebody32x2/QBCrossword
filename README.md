@@ -47,6 +47,7 @@ bun run build            # client -> dist/
 bun run dev              # API + dist on http://127.0.0.1:3000
 bun run dev:client       # optional: Vite dev server with /api proxied to :3000
 bun run typecheck
+bun test                 # answerline parsing, clue text, grid invariants
 ```
 
 ## Configuration
