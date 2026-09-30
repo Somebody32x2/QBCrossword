@@ -1,0 +1,375 @@
+/*
+ * Look and feel follow QB Reader: stock Bootstrap 5.3 with the system font
+ * stack, a pale blue navbar, the two-tone logo, and QB Reader's "night" palette
+ * mapped onto Bootstrap's dark theme.
+ */
+
+:root,
+[data-bs-theme="light"] {
+  --logo-prefix-color: #0080ff;
+  --logo-suffix-color: #000;
+  --qbx-navbar-bg: #dfebfb;
+  --qbx-cell-bg: #fff;
+  --qbx-cell-border: #6c757d;
+  --qbx-cell-text: #212529;
+  --qbx-word-bg: #dfebfb;
+  --qbx-selected-bg: #ffda00;
+  --qbx-reveal: #0d6efd;
+  --qbx-wrong: #dc3545;
+  --qbx-timer-bg: linear-gradient(#ddd, #eee);
+}
+
+:root {
+  --bs-link-decoration: none;
+}
+
+a {
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+[data-bs-theme="dark"] {
+  color-scheme: dark;
+  --logo-prefix-color: #0080ff;
+  --logo-suffix-color: #fff;
+  --qbx-navbar-bg: #333;
+  --qbx-cell-bg: #2b3035;
+  --qbx-cell-border: #8a939b;
+  --qbx-cell-text: #f1f1f1;
+  --qbx-word-bg: #2c4866;
+  --qbx-selected-bg: #8a6d00;
+  --qbx-reveal: #6ea8fe;
+  --qbx-wrong: #e74c3c;
+  --qbx-timer-bg: linear-gradient(#444, #333);
+
+  --bs-body-bg: #222;
+  --bs-body-bg-rgb: 34, 34, 34;
+  --bs-body-color: #e0e0e0;
+  --bs-body-color-rgb: 224, 224, 224;
+  --bs-emphasis-color: #e0e0e0;
+  --bs-tertiary-bg: #2b3035;
+  --bs-primary: #375a7f;
+  --bs-primary-rgb: 55, 90, 127;
+  --bs-success: #00bc8c;
+  --bs-danger: #e74c3c;
+  --bs-border-color: #495057;
+}
+
+[data-bs-theme="dark"] .btn-primary {
+  --bs-btn-bg: #375a7f;
+  --bs-btn-border-color: #375a7f;
+  --bs-btn-hover-bg: #2f4d6c;
+  --bs-btn-hover-border-color: #2c4866;
+  --bs-btn-active-bg: #2c4866;
+  --bs-btn-active-border-color: #29435f;
+  --bs-btn-disabled-bg: #375a7f;
+  --bs-btn-disabled-border-color: #375a7f;
+}
+
+[data-bs-theme="dark"] .btn-outline-primary {
+  --bs-btn-color: #8bb3dd;
+  --bs-btn-border-color: #4f7aa6;
+  --bs-btn-hover-bg: #375a7f;
+  --bs-btn-hover-border-color: #375a7f;
+  --bs-btn-active-bg: #375a7f;
+  --bs-btn-active-border-color: #375a7f;
+}
+
+[data-bs-theme="dark"] .text-bg-primary {
+  background-color: #375a7f !important;
+}
+
+[data-bs-theme="dark"] .modal {
+  --bs-modal-bg: #2b2b2b;
+}
+
+[data-bs-theme="dark"] .dropdown-menu {
+  --bs-dropdown-bg: #2b2b2b;
+  --bs-dropdown-link-active-bg: #375a7f;
+}
+
+.qbx-navbar {
+  background-color: var(--qbx-navbar-bg);
+}
+
+#logo {
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+.logo-prefix {
+  color: var(--logo-prefix-color);
+}
+
+.logo-suffix {
+  color: var(--logo-suffix-color);
+}
+
+.small-alert {
+  --bs-alert-padding-y: 0.5rem;
+}
+
+.qbx-checklist {
+  min-width: 17rem;
+}
+
+.qbx-initials {
+  font-family: var(--bs-font-monospace);
+  letter-spacing: 0.08em;
+}
+
+.qbx-own-row > td {
+  --bs-table-bg-state: var(--qbx-word-bg);
+  font-weight: 600;
+}
+
+/* ---- Toolbar and timer (QB Reader's timer box) ------------------------- */
+
+.qbx-toolbar {
+  border-bottom: 0.5px solid var(--bs-border-color);
+  padding-bottom: 0.75rem;
+}
+
+.qbx-timer {
+  background: var(--qbx-timer-bg);
+  border-radius: var(--bs-border-radius);
+  padding: 0.1rem 0.6rem;
+  font-size: 1.35rem;
+  line-height: 1.4;
+  min-width: 5.5rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.qbx-timer-hidden {
+  color: var(--bs-secondary-color);
+}
+
+/* ---- Grid -------------------------------------------------------------- */
+
+.qbx-grid-wrap {
+  width: 100%;
+  margin-inline: auto;
+}
+
+.qbx-grid {
+  position: relative;
+  display: grid;
+  container-type: inline-size;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.qbx-cell {
+  position: relative;
+  aspect-ratio: 1;
+  background: var(--qbx-cell-bg);
+  outline: 1px solid var(--qbx-cell-border);
+  outline-offset: -0.5px;
+  cursor: pointer;
+  color: var(--qbx-cell-text);
+}
+
+.qbx-block {
+  background: transparent;
+  outline: none;
+  cursor: default;
+}
+
+.qbx-in-word {
+  background: var(--qbx-word-bg);
+}
+
+.qbx-selected {
+  background: var(--qbx-selected-bg);
+}
+
+.qbx-num {
+  position: absolute;
+  top: 1px;
+  left: 2px;
+  font-size: calc(100cqw / var(--cols) * 0.26);
+  line-height: 1;
+}
+
+.qbx-letter {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 12%;
+  font-size: calc(100cqw / var(--cols) * 0.56);
+  font-weight: 600;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.qbx-wrong .qbx-letter {
+  color: var(--qbx-wrong);
+}
+
+.qbx-wrong::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top right, transparent calc(50% - 1px), var(--qbx-wrong) 50%, transparent calc(50% + 1px));
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.qbx-revealed .qbx-letter {
+  color: var(--qbx-reveal);
+}
+
+.qbx-revealed::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-style: solid;
+  border-width: 0 calc(100cqw / var(--cols) * 0.22) calc(100cqw / var(--cols) * 0.22) 0;
+  border-color: transparent var(--qbx-reveal) transparent transparent;
+}
+
+.qbx-solved {
+  cursor: default;
+}
+
+.qbx-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  border: 0;
+  padding: 0;
+  font-size: 16px; /* stops iOS zooming on focus */
+  pointer-events: none;
+}
+
+.qbx-grid-paused .qbx-cell:not(.qbx-block) {
+  background: var(--bs-tertiary-bg);
+}
+
+.qbx-paused-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- Clues ------------------------------------------------------------- */
+
+.qbx-clue-bar {
+  background: var(--qbx-word-bg);
+  border-radius: var(--bs-border-radius);
+  padding: 0.6rem 0.8rem;
+  min-height: 4.5rem;
+}
+
+.qbx-clue-bar-label {
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+
+.qbx-clue-bar-text {
+  font-size: 1.05rem;
+  max-height: 8.2rem;
+  overflow-y: auto;
+}
+
+.qbx-clue-scroll {
+  max-height: calc(100dvh - 11rem);
+  overflow-y: auto;
+  position: relative;
+  padding-right: 0.25rem;
+}
+
+@media (max-width: 991.98px) {
+  .qbx-clue-scroll {
+    max-height: none;
+  }
+}
+
+.qbx-clue-heading {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bs-body-bg);
+  padding: 0.35rem 0;
+  margin: 0;
+  border-bottom: 1px solid var(--bs-border-color);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.8rem;
+  color: var(--bs-secondary-color);
+}
+
+.qbx-clue {
+  display: flex;
+  gap: 0.6rem;
+  cursor: pointer;
+  padding: 0.5rem 0.4rem;
+  border-left: 3px solid transparent;
+}
+
+.qbx-clue-active {
+  background: var(--qbx-word-bg);
+  border-left-color: var(--bs-primary);
+}
+
+.qbx-clue-cross {
+  border-left-color: var(--qbx-word-bg);
+}
+
+.qbx-clue-complete .qbx-clue-body > .qbx-clue-text {
+  color: var(--bs-secondary-color);
+}
+
+.qbx-clue-num {
+  font-weight: 700;
+  min-width: 1.6rem;
+  text-align: right;
+}
+
+.qbx-clue-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.qbx-clue-meta {
+  margin-top: 0.15rem;
+}
+
+.qbx-answer {
+  border-left: 2px solid var(--bs-success);
+  padding-left: 0.4rem;
+}
+
+/* ---- Subject picker ---------------------------------------------------- */
+
+.qbx-subjects {
+  columns: 3 16rem;
+  column-gap: 2rem;
+}
+
+.qbx-subject-group {
+  break-inside: avoid;
+  margin-bottom: 1rem;
+}
+
+.qbx-start {
+  max-width: 70ch;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+  }
+}

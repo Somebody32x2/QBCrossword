@@ -1,0 +1,8 @@
+node_modules
+dist
+data
+*.zip
+*.db
+*.db-*
+.git
+*.md

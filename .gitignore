@@ -1,0 +1,20 @@
+node_modules
+dist
+
+# Question data and runtime databases are never versioned.
+data/
+*.zip
+*.db
+*.db-shm
+*.db-wal
+
+# Only the README is published.
+*.md
+!README.md
+
+.env
+.env.*
+.DS_Store
+.idea
+*.tsbuildinfo
+*.log
