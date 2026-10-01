@@ -52,6 +52,17 @@ console.log(`Loaded ${hints.size} hints from ${HINTS_DB}`);
 setInterval(() => store.pruneCustomPuzzles(), 24 * 60 * 60 * 1000).unref();
 store.pruneCustomPuzzles();
 
+/** Build today's and tomorrow's dailies in the background so no visitor waits on a fill. */
+function prebuildDailies(): void {
+  const today = dailyDate();
+  const tomorrow = dailyDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
+  for (const date of [today, tomorrow]) {
+    getOrCreateDaily(date, hints, store).catch((e: unknown) => console.error(`Daily ${date} failed to build:`, e));
+  }
+}
+prebuildDailies();
+setInterval(prebuildDailies, 60 * 60 * 1000).unref();
+
 class HttpError extends Error {
   constructor(readonly status: number, message: string) {
     super(message);
@@ -114,7 +125,8 @@ function cellList(p: PuzzleRecord, raw: unknown): number[] {
 
 function loadPuzzle(id: string): PuzzleRecord {
   const p = store.getPuzzle(id);
-  if (!p) throw new HttpError(404, "Puzzle not found.");
+  // Upcoming dailies are built ahead of time but stay hidden until their day.
+  if (!p || (p.kind === "daily" && p.date! > dailyDate())) throw new HttpError(404, "Puzzle not found.");
   return p;
 }
 

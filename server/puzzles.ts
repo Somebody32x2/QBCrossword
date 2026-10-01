@@ -18,29 +18,46 @@ const FILL_BUDGET_MS: Record<number, number> = { 5: 1500, 7: 2000, 9: 2500, 11: 
 // ---------------------------------------------------------------------------
 // Fill workers
 
+interface FillJob {
+  request: FillRequest;
+  resolve: (r: FillResponse) => void;
+  reject: (e: Error) => void;
+}
+
 const WORKERS = 2;
-const workers = Array.from({ length: WORKERS }, () => new Worker(new URL("./fillWorker.ts", import.meta.url).href));
-const idle = [...workers];
-const queue: Array<{ request: Omit<FillRequest, "id">; resolve: (r: FillResponse) => void }> = [];
-const pending = new Map<number, (r: FillResponse) => void>();
-let nextId = 1;
+const idle: Worker[] = [];
+const busy = new Map<Worker, FillJob>();
+const queue: FillJob[] = [];
+
+function finish(worker: Worker, settle: (job: FillJob) => void): void {
+  const job = busy.get(worker);
+  busy.delete(worker);
+  idle.push(worker);
+  if (job) settle(job);
+  pump();
+}
+
+for (let i = 0; i < WORKERS; i++) {
+  const worker = new Worker(new URL("./fillWorker.ts", import.meta.url).href);
+  worker.onmessage = (e: MessageEvent<FillResponse>) => finish(worker, (job) => job.resolve(e.data));
+  worker.onerror = (e: ErrorEvent) => finish(worker, (job) => job.reject(new Error(`Grid fill failed: ${e.message}`)));
+  idle.push(worker);
+}
 
 function pump(): void {
   while (idle.length && queue.length) {
     const worker = idle.pop()!;
     const job = queue.shift()!;
-    const id = nextId++;
-    pending.set(id, (r) => {
-      idle.push(worker);
-      job.resolve(r);
-      pump();
-    });
-    worker.postMessage({ ...job.request, id } satisfies FillRequest);
+    busy.set(worker, job);
+    worker.postMessage(job.request);
   }
 }
-for (const w of workers) w.onmessage = (e: MessageEvent<FillResponse>) => pending.get(e.data.id)?.(e.data);
 
-const runFill = (request: Omit<FillRequest, "id">) => new Promise<FillResponse>((resolve) => (queue.push({ request, resolve }), pump()));
+const runFill = (request: FillRequest) =>
+  new Promise<FillResponse>((resolve, reject) => {
+    queue.push({ request, resolve, reject });
+    pump();
+  });
 
 // ---------------------------------------------------------------------------
 
