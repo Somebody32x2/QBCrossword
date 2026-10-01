@@ -5,7 +5,7 @@ import { ANY_DIFFICULTY, DAILY_SCHEDULE, DAILY_TIMEZONE, DIFFICULTIES } from "..
 import type { FillRequest, FillResponse } from "./fillWorker";
 import { seededRng } from "./generator";
 import type { HintFilter, HintStore } from "./hints";
-import type { PuzzleRecord, StoredLayout } from "./store";
+import type { PuzzleRecord, StoredHint, StoredLayout } from "./store";
 
 export class NotEnoughCluesError extends Error {}
 
@@ -102,7 +102,22 @@ export async function buildLayout(hints: HintStore, config: PuzzleConfig, seed: 
     height: layout.height,
     style: result.style,
     widened: widths[result.pool]!,
-    placements: layout.placements.map((p) => ({ ...p, hintId: hints.pick(pool.hints.get(p.entry)!, rng) })),
+    placements: layout.placements.map((p) => {
+      const h = hints.get(hints.pick(pool.hints.get(p.entry)!, rng))!;
+      const hint: StoredHint = {
+        text: h.text,
+        category: h.category,
+        subcategory: h.subcategory,
+        alternateSubcategory: h.alternate_subcategory,
+        difficulty: h.difficulty,
+        setName: h.set_name,
+        sourceType: h.source_type,
+        sourceId: h.source_id,
+        display: h.display,
+        answer: h.answer,
+      };
+      return { ...p, hint };
+    }),
   };
 }
 
@@ -143,14 +158,11 @@ export function difficultyLabel(difficulties: number[]): string {
   return names.length <= 2 ? names.join(" + ") : `${names[0]} to ${names[names.length - 1]}`;
 }
 
-export function puzzleView(p: PuzzleRecord, hints: HintStore, label?: string): PuzzleView {
+export function puzzleView(p: PuzzleRecord, label?: string): PuzzleView {
   const { cells, numberAt } = numberLayout(p.layout);
-  const views: ClueView[] = [];
-  for (const pl of p.layout.placements) {
-    const hint = hints.get(pl.hintId);
-    if (!hint) continue;
+  const views: ClueView[] = p.layout.placements.map(({ hint, ...pl }) => {
     const number = numberAt(pl.row, pl.col);
-    views.push({
+    return {
       key: `${number}-${pl.dir}`,
       number,
       dir: pl.dir,
@@ -160,13 +172,13 @@ export function puzzleView(p: PuzzleRecord, hints: HintStore, label?: string): P
       text: hint.text,
       category: hint.category,
       subcategory: hint.subcategory,
-      alternateSubcategory: hint.alternate_subcategory,
+      alternateSubcategory: hint.alternateSubcategory,
       difficulty: hint.difficulty,
-      setName: hint.set_name,
-      sourceType: hint.source_type,
-      sourceId: hint.source_id,
-    });
-  }
+      setName: hint.setName,
+      sourceType: hint.sourceType,
+      sourceId: hint.sourceId,
+    };
+  });
   views.sort((a, b) => (a.dir === b.dir ? a.number - b.number : a.dir === "across" ? -1 : 1));
   return {
     id: p.id,
@@ -183,16 +195,11 @@ export function puzzleView(p: PuzzleRecord, hints: HintStore, label?: string): P
   };
 }
 
-export function answers(p: PuzzleRecord, hints: HintStore): Record<string, AnswerView> {
+export function answers(p: PuzzleRecord): Record<string, AnswerView> {
   const { numberAt } = numberLayout(p.layout);
   const out: Record<string, AnswerView> = {};
   for (const pl of p.layout.placements) {
-    const hint = hints.get(pl.hintId);
-    out[`${numberAt(pl.row, pl.col)}-${pl.dir}`] = {
-      entry: pl.entry,
-      display: hint?.display ?? pl.entry,
-      answer: hint?.answer ?? pl.entry,
-    };
+    out[`${numberAt(pl.row, pl.col)}-${pl.dir}`] = { entry: pl.entry, display: pl.hint.display, answer: pl.hint.answer };
   }
   return out;
 }

@@ -4,8 +4,25 @@ import { Database } from "bun:sqlite";
 import type { PuzzleConfig } from "../shared/types";
 import type { Placement } from "./generator";
 
+/**
+ * The clue as served, copied into the puzzle so stored puzzles never change
+ * when the hint database is rebuilt.
+ */
+export interface StoredHint {
+  text: string;
+  category: string;
+  subcategory: string;
+  alternateSubcategory: string | null;
+  difficulty: number;
+  setName: string;
+  sourceType: "tossup" | "bonus";
+  sourceId: string;
+  display: string;
+  answer: string;
+}
+
 export interface StoredPlacement extends Placement {
-  hintId: number;
+  hint: StoredHint;
 }
 
 export interface StoredLayout {

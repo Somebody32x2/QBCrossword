@@ -90,6 +90,8 @@ const BACK_REFERENCE =
 export const MIN_HINT_WORDS = 5;
 export const MAX_HINT_WORDS = 40;
 
+const MID_GIVEAWAY =
+  /\s+for\s+(?:10|ten|15|fifteen|20|twenty|5|five)\s+points(?:\s+each)?\s*,?\s*(?:name|identify|give)\s+(this|these)\b/gi;
 /**
  * A sentence as a standalone crossword clue, or null when it cannot stand
  * alone. "For 10 points, name this composer of X." becomes "This composer of X."
@@ -99,6 +101,12 @@ export function toHint(sentence: string, answerWords: string[]): string | null {
   const g = GIVEAWAY.exec(s);
   if (g) s = g[1]![0]!.toUpperCase() + g[1]!.slice(1).toLowerCase() + s.slice(g[0].length);
   else s = s.replace(POINTS_PREFIX, "");
+  // "Exemplified by X, for 10 points, name these compounds" -> "Exemplified by X, these compounds".
+  s = s
+    .replace(MID_GIVEAWAY, (_, pointer: string) => ` ${pointer.toLowerCase()}`)
+    .replace(/,?\s*for\s+(?:10|ten|15|fifteen|20|twenty|5|five)\s+points(?:\s+each)?\s*,?/gi, ",")
+    .replace(/,\s*,/g, ",")
+    .replace(/,\s*([.?!]|$)/g, "$1");
   s = s.replace(/^[a-z]/, (c) => c.toUpperCase());
   if (!/\b(?:this|these)\b/i.test(s) || CONTEXT_OPENER.test(s)) return null;
   const words = s.split(" ").length;

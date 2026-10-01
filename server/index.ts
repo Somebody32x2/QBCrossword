@@ -202,7 +202,7 @@ async function api(req: Request, path: string, server: Bun.Server<undefined>): P
       s = { id: newPuzzleId() + newPuzzleId(), puzzleId: p.id, ipHash: hashIp(ip), startedAt: Date.now(), finishedAt: null, assisted: false, claimed: false };
       store.createSession(s);
     }
-    return json({ session: sessionView(s), puzzle: puzzleView(p, hints, dailyInfo(p).difficultyLabel) });
+    return json({ session: sessionView(s), puzzle: puzzleView(p, dailyInfo(p).difficultyLabel) });
   }
 
   if (path === "/api/puzzles" && method === "POST") {
@@ -221,7 +221,7 @@ async function api(req: Request, path: string, server: Bun.Server<undefined>): P
     }
     const record: PuzzleRecord = { id, kind: "custom", date: null, config, layout };
     store.insertPuzzle(record);
-    return json(puzzleView(record, hints));
+    return json(puzzleView(record));
   }
 
   const m = /^\/api\/puzzles\/([A-Za-z0-9_-]{1,40})(?:\/(check|reveal|submit))?$/.exec(path);
@@ -230,7 +230,7 @@ async function api(req: Request, path: string, server: Bun.Server<undefined>): P
     const action = m[2];
     if (!action && method === "GET") {
       if (isLiveDaily(p)) throw new HttpError(403, "Start today's puzzle from the daily page.");
-      return json(puzzleView(p, hints, p.kind === "daily" ? dailyInfo(p).difficultyLabel : undefined));
+      return json(puzzleView(p, p.kind === "daily" ? dailyInfo(p).difficultyLabel : undefined));
     }
     if (method !== "POST") throw new HttpError(405, "Method not allowed.");
     const b = await body(req);
@@ -252,7 +252,7 @@ async function api(req: Request, path: string, server: Bun.Server<undefined>): P
     // submit
     const letters = lettersFor(p, b.letters);
     if (!isSolved(p, letters)) return json({ solved: false } satisfies SubmitResult);
-    const result: SubmitResult = { solved: true, answers: answers(p, hints) };
+    const result: SubmitResult = { solved: true, answers: answers(p) };
     if (session && p.date) {
       const done = store.finishSession(session.id, Date.now())!;
       result.ms = done.finishedAt! - done.startedAt;

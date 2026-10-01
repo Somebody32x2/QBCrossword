@@ -60,6 +60,12 @@ describe("toHint", () => {
       "This composer of the Brandenburg Concertos.",
     );
     expect(toHint("Name these particles that come in six flavors.", ["quark"])).toBe("These particles that come in six flavors.");
+    expect(toHint("Exemplified by cholesterol, for 10 points, name these compounds commonly called fats.", ["lipid"])).toBe(
+      "Exemplified by cholesterol, these compounds commonly called fats.",
+    );
+    expect(toHint("This poet wrote The Waste Land and other poems, for 10 points.", ["Eliot"])).toBe(
+      "This poet wrote The Waste Land and other poems.",
+    );
   });
 
   test("rejects sentences that lean on earlier context or blank out the answer", () => {
