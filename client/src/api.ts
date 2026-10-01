@@ -8,7 +8,13 @@ import type {
   SubmitResult,
 } from "../../shared/types";
 
-export const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+/**
+ * Mount point of this page. Assets are built under BASE_PATH (e.g. /qbcrossword),
+ * but an alias domain can serve the app at its root, so detect which one we are on.
+ */
+const BUILT_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+export const BASE =
+  window.location.pathname === BUILT_BASE || window.location.pathname.startsWith(`${BUILT_BASE}/`) ? BUILT_BASE : "";
 
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) {
