@@ -18,14 +18,17 @@ export interface ClueView {
   row: number;
   col: number;
   length: number;
-  enumeration: string;
-  sentences: string[];
+  /** A single sentence from a quizbowl question about the answer. */
+  text: string;
   category: string;
   subcategory: string;
   alternateSubcategory: string | null;
+  /** Effective difficulty of this sentence (source level shifted by its position). */
   difficulty: number;
   setName: string;
-  qbreaderId: string;
+  sourceType: "tossup" | "bonus";
+  /** QB Reader id of the source question. */
+  sourceId: string;
 }
 
 export interface PuzzleView {
@@ -34,6 +37,10 @@ export interface PuzzleView {
   /** Daily puzzles only: YYYY-MM-DD in the daily time zone. */
   date: string | null;
   difficultyLabel: string;
+  /** Difficulty levels added on each side of the request to find a full fill (0 = as asked). */
+  widened: number;
+  /** "american": every square crossed both ways; "freeform": packed fallback. */
+  style: "american" | "freeform";
   config: PuzzleConfig;
   width: number;
   height: number;

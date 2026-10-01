@@ -5,12 +5,16 @@ import type { PuzzleConfig } from "../shared/types";
 import type { Placement } from "./generator";
 
 export interface StoredPlacement extends Placement {
-  clueId: string;
+  hintId: number;
 }
 
 export interface StoredLayout {
   width: number;
   height: number;
+  /** "american": every white square crossed both ways; "freeform": packed fallback. */
+  style: "american" | "freeform";
+  /** Difficulty levels added on each side of the request to find a fill (0 = as asked). */
+  widened: number;
   placements: StoredPlacement[];
 }
 

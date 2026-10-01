@@ -21,7 +21,7 @@ export interface RecentPuzzle {
   created: number;
 }
 
-const DEFAULT_SETTINGS: Settings = { size: 15, difficulties: [3, 4], subjects: ALL_SUBJECTS };
+const DEFAULT_SETTINGS: Settings = { size: 11, difficulties: [3, 4], subjects: ALL_SUBJECTS };
 
 export function difficultySummary(ds: number[]): string {
   if (ds.length === 0) return "Any difficulty";
@@ -31,7 +31,11 @@ export function difficultySummary(ds: number[]): string {
 }
 
 export function Home() {
-  const [settings, setSettings] = useState<Settings>(() => ({ ...DEFAULT_SETTINGS, ...storage.get<Partial<Settings>>("settings", {}) }));
+  const [settings, setSettings] = useState<Settings>(() => {
+    const saved = { ...DEFAULT_SETTINGS, ...storage.get<Partial<Settings>>("settings", {}) };
+    // Sizes change between versions; an old saved size falls back to the default.
+    return SIZES.some((s) => s.size === saved.size) ? saved : { ...saved, size: DEFAULT_SETTINGS.size };
+  });
   const [daily, setDaily] = useState<DailyInfo | null>(null);
   const [board, setBoard] = useState<Leaderboard | null>(null);
   const [meta, setMeta] = useState<MetaView | null>(null);
@@ -207,7 +211,7 @@ export function Home() {
               "Generate puzzle"
             )}
           </button>
-          {meta && <p className="small text-body-secondary mt-2 mb-0">{meta.clueCount.toLocaleString()} tossups available.</p>}
+          {meta && <p className="small text-body-secondary mt-2 mb-0">{meta.clueCount.toLocaleString()} clues available.</p>}
         </section>
       </div>
 

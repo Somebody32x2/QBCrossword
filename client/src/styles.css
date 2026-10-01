@@ -10,12 +10,14 @@
   --logo-suffix-color: #000;
   --qbx-navbar-bg: #dfebfb;
   --qbx-cell-bg: #fff;
-  --qbx-cell-border: #6c757d;
-  --qbx-cell-text: #212529;
-  --qbx-word-bg: #dfebfb;
+  --qbx-cell-line: #959595;
+  --qbx-block: #000;
+  --qbx-frame: #000;
+  --qbx-cell-text: #000;
+  --qbx-word-bg: #a7d8ff;
   --qbx-selected-bg: #ffda00;
-  --qbx-reveal: #0d6efd;
-  --qbx-wrong: #dc3545;
+  --qbx-clue-bar-bg: #dcefff;
+  --qbx-wrong: #e63333;
   --qbx-timer-bg: linear-gradient(#ddd, #eee);
 }
 
@@ -36,13 +38,15 @@ a:hover {
   --logo-prefix-color: #0080ff;
   --logo-suffix-color: #fff;
   --qbx-navbar-bg: #333;
-  --qbx-cell-bg: #2b3035;
-  --qbx-cell-border: #8a939b;
+  --qbx-cell-bg: #3a3f44;
+  --qbx-cell-line: #16191c;
+  --qbx-block: #0b0c0d;
+  --qbx-frame: #0b0c0d;
   --qbx-cell-text: #f1f1f1;
   --qbx-word-bg: #2c4866;
   --qbx-selected-bg: #8a6d00;
-  --qbx-reveal: #6ea8fe;
-  --qbx-wrong: #e74c3c;
+  --qbx-clue-bar-bg: #2c4866;
+  --qbx-wrong: #ff5c5c;
   --qbx-timer-bg: linear-gradient(#444, #333);
 
   --bs-body-bg: #222;
@@ -148,6 +152,33 @@ a:hover {
   color: var(--bs-secondary-color);
 }
 
+/* ---- Board: grid left, Across and Down columns right (NYT layout) ------- */
+
+.qbx-board {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 992px) {
+  .qbx-board {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.qbx-board-clues {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 575.98px) {
+  .qbx-board-clues {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ---- Grid -------------------------------------------------------------- */
 
 .qbx-grid-wrap {
@@ -161,21 +192,22 @@ a:hover {
   container-type: inline-size;
   user-select: none;
   touch-action: manipulation;
+  border: 2px solid var(--qbx-frame);
+  background: var(--qbx-block);
 }
 
 .qbx-cell {
   position: relative;
   aspect-ratio: 1;
   background: var(--qbx-cell-bg);
-  outline: 1px solid var(--qbx-cell-border);
-  outline-offset: -0.5px;
+  box-shadow: inset 0 0 0 0.5px var(--qbx-cell-line);
   cursor: pointer;
   color: var(--qbx-cell-text);
 }
 
 .qbx-block {
-  background: transparent;
-  outline: none;
+  background: var(--qbx-block);
+  box-shadow: none;
   cursor: default;
 }
 
@@ -189,9 +221,9 @@ a:hover {
 
 .qbx-num {
   position: absolute;
-  top: 1px;
-  left: 2px;
-  font-size: calc(100cqw / var(--cols) * 0.26);
+  top: 2%;
+  left: 4%;
+  font-size: calc(100cqw / var(--cols) * 0.3);
   line-height: 1;
 }
 
@@ -201,15 +233,10 @@ a:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding-top: 12%;
-  font-size: calc(100cqw / var(--cols) * 0.56);
-  font-weight: 600;
+  padding-top: 18%;
+  font-size: calc(100cqw / var(--cols) * 0.6);
   line-height: 1;
   text-transform: uppercase;
-}
-
-.qbx-wrong .qbx-letter {
-  color: var(--qbx-wrong);
 }
 
 .qbx-wrong::after {
@@ -217,12 +244,7 @@ a:hover {
   position: absolute;
   inset: 0;
   background: linear-gradient(to top right, transparent calc(50% - 1px), var(--qbx-wrong) 50%, transparent calc(50% + 1px));
-  opacity: 0.8;
   pointer-events: none;
-}
-
-.qbx-revealed .qbx-letter {
-  color: var(--qbx-reveal);
 }
 
 .qbx-revealed::before {
@@ -231,12 +253,8 @@ a:hover {
   top: 0;
   right: 0;
   border-style: solid;
-  border-width: 0 calc(100cqw / var(--cols) * 0.22) calc(100cqw / var(--cols) * 0.22) 0;
-  border-color: transparent var(--qbx-reveal) transparent transparent;
-}
-
-.qbx-solved {
-  cursor: default;
+  border-width: 0 calc(100cqw / var(--cols) * 0.24) calc(100cqw / var(--cols) * 0.24) 0;
+  border-color: transparent var(--qbx-wrong) transparent transparent;
 }
 
 .qbx-input {
@@ -267,74 +285,66 @@ a:hover {
 /* ---- Clues ------------------------------------------------------------- */
 
 .qbx-clue-bar {
-  background: var(--qbx-word-bg);
-  border-radius: var(--bs-border-radius);
-  padding: 0.6rem 0.8rem;
-  min-height: 4.5rem;
-}
-
-.qbx-clue-bar-label {
-  font-weight: 600;
-  margin-bottom: 0.15rem;
-}
-
-.qbx-clue-bar-text {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: var(--qbx-clue-bar-bg);
+  padding: 0.5rem 0.9rem;
+  min-height: 3.6rem;
+  margin-bottom: 0.75rem;
   font-size: 1.05rem;
-  max-height: 8.2rem;
-  overflow-y: auto;
 }
 
-.qbx-clue-scroll {
-  max-height: calc(100dvh - 11rem);
-  overflow-y: auto;
-  position: relative;
-  padding-right: 0.25rem;
-}
-
-@media (max-width: 991.98px) {
-  .qbx-clue-scroll {
-    max-height: none;
-  }
+.qbx-clue-bar-key {
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .qbx-clue-heading {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--bs-body-bg);
   padding: 0.35rem 0;
   margin: 0;
   border-bottom: 1px solid var(--bs-border-color);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 0.8rem;
-  color: var(--bs-secondary-color);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.qbx-clue-scroll {
+  max-height: calc(100dvh - 14rem);
+  overflow-y: auto;
+  position: relative;
+}
+
+@media (max-width: 991.98px) {
+  .qbx-clue-scroll {
+    max-height: 24rem;
+  }
 }
 
 .qbx-clue {
   display: flex;
   gap: 0.6rem;
   cursor: pointer;
-  padding: 0.5rem 0.4rem;
-  border-left: 3px solid transparent;
+  padding: 0.35rem 0.4rem 0.35rem 0.2rem;
+  border-left: 0.6rem solid transparent;
+  line-height: 1.35;
 }
 
 .qbx-clue-active {
   background: var(--qbx-word-bg);
-  border-left-color: var(--bs-primary);
 }
 
 .qbx-clue-cross {
   border-left-color: var(--qbx-word-bg);
 }
 
-.qbx-clue-complete .qbx-clue-body > .qbx-clue-text {
+.qbx-clue-complete .qbx-clue-body {
   color: var(--bs-secondary-color);
 }
 
 .qbx-clue-num {
   font-weight: 700;
-  min-width: 1.6rem;
+  min-width: 1.4rem;
   text-align: right;
 }
 
@@ -343,13 +353,8 @@ a:hover {
   min-width: 0;
 }
 
-.qbx-clue-meta {
-  margin-top: 0.15rem;
-}
-
 .qbx-answer {
-  border-left: 2px solid var(--bs-success);
-  padding-left: 0.4rem;
+  color: var(--bs-body-color);
 }
 
 /* ---- Subject picker ---------------------------------------------------- */

@@ -27,7 +27,7 @@ COPY shared ./shared
 COPY scripts ./scripts
 COPY --from=build /app/dist ./dist
 
-# /data holds clues.db (built with `bun run ingest`) and app.db (puzzles,
+# /data holds hints.db (built with `bun run ingest`) and app.db (puzzles,
 # sessions, scores). Mount a volume here or scores vanish on redeploy.
 ENV DATA_DIR=/data
 RUN mkdir -p /data && chown -R bun:bun /data /app

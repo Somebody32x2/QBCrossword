@@ -85,7 +85,7 @@ export function SubjectPicker({
         </>
       }
     >
-      <p className="small text-body-secondary">Numbers are tossups in the database. Narrow subjects need broader difficulties to fill big grids.</p>
+      <p className="small text-body-secondary">Numbers are clue sentences in the database. Narrow subjects may fall back to a looser grid.</p>
       <div className="qbx-subjects">
         {Object.entries(TAXONOMY).map(([cat, subMap]) => {
           const catSubs = Object.keys(subMap).map((s) => `${cat}/${s}`);

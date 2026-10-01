@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, normalize, resolve, sep } from "node:path";
 import type { Leaderboard, MetaView, PuzzleConfig, SessionView, SubmitResult } from "../shared/types";
 import { SIZES } from "../shared/taxonomy";
-import { ClueStore, sanitizeFilter } from "./clues";
+import { HintStore, sanitizeFilter } from "./hints";
 import {
   NotEnoughCluesError,
   answers,
@@ -25,7 +25,7 @@ const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? "127.0.0.1";
 const BASE_PATH = (process.env.BASE_PATH ?? "").replace(/\/+$/, "");
 const DATA_DIR = resolve(process.env.DATA_DIR ?? "data");
-const CLUES_DB = resolve(process.env.CLUES_DB ?? join(DATA_DIR, "clues.db"));
+const HINTS_DB = resolve(process.env.HINTS_DB ?? join(DATA_DIR, "hints.db"));
 const DIST_DIR = resolve(process.env.DIST_DIR ?? "dist");
 /** Reverse proxies in front of us; the client IP is read this many hops from the right of X-Forwarded-For. */
 const TRUST_PROXY = Number(process.env.TRUST_PROXY ?? 0);
@@ -37,17 +37,17 @@ const SCORES_PER_IP = 3;
 const INITIALS = /^[A-Za-z]{3}$/;
 
 mkdirSync(DATA_DIR, { recursive: true });
-if (!existsSync(CLUES_DB)) {
-  console.error(`Clue database not found at ${CLUES_DB}. Build it with: bun run ingest <tossups.json>`);
+if (!existsSync(HINTS_DB)) {
+  console.error(`Hint database not found at ${HINTS_DB}. Build it with: bun run ingest <backup-dir>`);
   process.exit(1);
 }
-const clues = new ClueStore(CLUES_DB);
+const hints = new HintStore(HINTS_DB);
 const store = new Store(join(DATA_DIR, "app.db"));
 const saltPath = join(DATA_DIR, ".salt");
 if (!existsSync(saltPath)) writeFileSync(saltPath, Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"));
 const salt = readFileSync(saltPath, "utf8").trim();
-const counts = clues.counts();
-console.log(`Loaded ${clues.size} clues from ${CLUES_DB}`);
+const counts = hints.counts();
+console.log(`Loaded ${hints.size} hints from ${HINTS_DB}`);
 
 setInterval(() => store.pruneCustomPuzzles(), 24 * 60 * 60 * 1000).unref();
 store.pruneCustomPuzzles();
@@ -166,11 +166,11 @@ async function api(req: Request, path: string, server: Bun.Server<undefined>): P
   if (path === "/api/health") return json({ ok: true });
 
   if (path === "/api/meta" && method === "GET") {
-    return json({ clueCount: clues.size, counts } satisfies MetaView);
+    return json({ clueCount: hints.size, counts } satisfies MetaView);
   }
 
   if (path === "/api/daily" && method === "GET") {
-    return json(dailyInfo(getOrCreateDaily(dailyDate(), clues, store)));
+    return json(dailyInfo(await getOrCreateDaily(dailyDate(), hints, store)));
   }
 
   if (path === "/api/leaderboard" && method === "GET") {
@@ -190,7 +190,7 @@ async function api(req: Request, path: string, server: Bun.Server<undefined>): P
       s = { id: newPuzzleId() + newPuzzleId(), puzzleId: p.id, ipHash: hashIp(ip), startedAt: Date.now(), finishedAt: null, assisted: false, claimed: false };
       store.createSession(s);
     }
-    return json({ session: sessionView(s), puzzle: puzzleView(p, clues, dailyInfo(p).difficultyLabel) });
+    return json({ session: sessionView(s), puzzle: puzzleView(p, hints, dailyInfo(p).difficultyLabel) });
   }
 
   if (path === "/api/puzzles" && method === "POST") {
@@ -202,14 +202,14 @@ async function api(req: Request, path: string, server: Bun.Server<undefined>): P
     const id = newPuzzleId();
     let layout;
     try {
-      layout = buildLayout(clues, config, Math.random);
+      layout = await buildLayout(hints, config, id);
     } catch (e) {
       if (e instanceof NotEnoughCluesError) throw new HttpError(422, e.message);
       throw e;
     }
     const record: PuzzleRecord = { id, kind: "custom", date: null, config, layout };
     store.insertPuzzle(record);
-    return json(puzzleView(record, clues));
+    return json(puzzleView(record, hints));
   }
 
   const m = /^\/api\/puzzles\/([A-Za-z0-9_-]{1,40})(?:\/(check|reveal|submit))?$/.exec(path);
@@ -218,7 +218,7 @@ async function api(req: Request, path: string, server: Bun.Server<undefined>): P
     const action = m[2];
     if (!action && method === "GET") {
       if (isLiveDaily(p)) throw new HttpError(403, "Start today's puzzle from the daily page.");
-      return json(puzzleView(p, clues, p.kind === "daily" ? dailyInfo(p).difficultyLabel : undefined));
+      return json(puzzleView(p, hints, p.kind === "daily" ? dailyInfo(p).difficultyLabel : undefined));
     }
     if (method !== "POST") throw new HttpError(405, "Method not allowed.");
     const b = await body(req);
@@ -240,7 +240,7 @@ async function api(req: Request, path: string, server: Bun.Server<undefined>): P
     // submit
     const letters = lettersFor(p, b.letters);
     if (!isSolved(p, letters)) return json({ solved: false } satisfies SubmitResult);
-    const result: SubmitResult = { solved: true, answers: answers(p, clues) };
+    const result: SubmitResult = { solved: true, answers: answers(p, hints) };
     if (session && p.date) {
       const done = store.finishSession(session.id, Date.now())!;
       result.ms = done.finishedAt! - done.startedAt;

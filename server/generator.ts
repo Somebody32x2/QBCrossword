@@ -46,9 +46,9 @@ export function shuffle<T>(items: T[], rng: Rng): T[] {
   return items;
 }
 
-/** Word-count target per grid size; beyond this grids get cramped and slow to solve. */
+/** Word-count cap per grid size for free-form grids; dense packing rarely gets this far. */
 export function targetWordCount(size: number): number {
-  return Math.round(size * size * 0.14) + 2;
+  return Math.round(size * size * 0.3);
 }
 
 const ACROSS = 1;
@@ -56,17 +56,24 @@ const DOWN = 2;
 
 interface Spot extends Placement {
   crossings: number;
+  /** Perpendicular runs the word would form with neighbouring letters; each must itself be an entry. */
+  incidental: Placement[];
 }
 
 class Grid {
   readonly letters: Uint8Array;
   readonly used: Uint8Array;
   readonly placements: Placement[] = [];
+  readonly entries = new Set<string>();
   /** Filled cell indices per letter (A = 0), the only places a new word can cross. */
   private readonly byLetter: number[][] = Array.from({ length: 26 }, () => []);
   filled = 0;
 
-  constructor(readonly size: number) {
+  /** `valid`: entries that may appear as incidental runs. */
+  constructor(
+    readonly size: number,
+    private readonly valid: ReadonlySet<string>,
+  ) {
     this.letters = new Uint8Array(size * size);
     this.used = new Uint8Array(size * size);
   }
@@ -75,47 +82,71 @@ class Grid {
     return r < 0 || c < 0 || r >= this.size || c >= this.size ? 0 : this.letters[r * this.size + c]!;
   }
 
-  /** Crossing count for a legal placement, or -1 if the placement is illegal. */
-  crossings(word: string, row: number, col: number, dir: Direction): number {
+  /** The placement with its crossings and incidental runs, or null if illegal. */
+  check(word: string, row: number, col: number, dir: Direction): Spot | null {
     const dr = dir === "down" ? 1 : 0;
     const dc = dir === "across" ? 1 : 0;
     const endR = row + dr * (word.length - 1);
     const endC = col + dc * (word.length - 1);
-    if (row < 0 || col < 0 || endR >= this.size || endC >= this.size) return -1;
-    if (this.at(row - dr, col - dc) || this.at(endR + dr, endC + dc)) return -1;
+    if (row < 0 || col < 0 || endR >= this.size || endC >= this.size) return null;
+    if (this.at(row - dr, col - dc) || this.at(endR + dr, endC + dc)) return null;
     const mask = dir === "across" ? ACROSS : DOWN;
+    const cross: Direction = dir === "across" ? "down" : "across";
+    const crossMask = dir === "across" ? DOWN : ACROSS;
     let crossings = 0;
+    const incidental: Placement[] = [];
     for (let i = 0; i < word.length; i++) {
       const r = row + dr * i;
       const c = col + dc * i;
       const cell = this.letters[r * this.size + c]!;
       if (cell) {
-        if (cell !== word.charCodeAt(i) || this.used[r * this.size + c]! & mask) return -1;
+        if (cell !== word.charCodeAt(i) || this.used[r * this.size + c]! & mask) return null;
         crossings++;
-      } else if (this.at(r - dc, c - dr) || this.at(r + dc, c + dr)) {
-        return -1;
+        continue;
       }
+      // Letters beside a new square would form a perpendicular run; allow it only if that run is an entry.
+      let a = 0;
+      while (this.at(r - dc * (a + 1), c - dr * (a + 1))) a++;
+      let b = 0;
+      while (this.at(r + dc * (b + 1), c + dr * (b + 1))) b++;
+      if (a === 0 && b === 0) continue;
+      let run = "";
+      for (let k = -a; k <= b; k++) {
+        const rr = r + dc * k;
+        const cc = c + dr * k;
+        if (k === 0) run += word[i];
+        else {
+          if (this.used[rr * this.size + cc]! & crossMask) return null;
+          run += String.fromCharCode(this.letters[rr * this.size + cc]!);
+        }
+      }
+      if (run.length < 3 || !this.valid.has(run) || this.entries.has(run) || run === word || incidental.some((p) => p.entry === run)) {
+        return null;
+      }
+      incidental.push({ entry: run, row: r - dc * a, col: c - dr * a, dir: cross });
     }
-    return crossings === word.length ? -1 : crossings;
+    if (crossings === word.length) return null;
+    return { entry: word, row, col, dir, crossings, incidental };
   }
 
-  place(word: string, row: number, col: number, dir: Direction): void {
-    const dr = dir === "down" ? 1 : 0;
-    const dc = dir === "across" ? 1 : 0;
-    const mask = dir === "across" ? ACROSS : DOWN;
-    for (let i = 0; i < word.length; i++) {
-      const idx = (row + dr * i) * this.size + col + dc * i;
+  place(p: Placement): void {
+    const dr = p.dir === "down" ? 1 : 0;
+    const dc = p.dir === "across" ? 1 : 0;
+    const mask = p.dir === "across" ? ACROSS : DOWN;
+    for (let i = 0; i < p.entry.length; i++) {
+      const idx = (p.row + dr * i) * this.size + p.col + dc * i;
       if (!this.letters[idx]) {
         this.filled++;
-        this.byLetter[word.charCodeAt(i) - 65]!.push(idx);
+        this.byLetter[p.entry.charCodeAt(i) - 65]!.push(idx);
       }
-      this.letters[idx] = word.charCodeAt(i);
+      this.letters[idx] = p.entry.charCodeAt(i);
       this.used[idx]! |= mask;
     }
-    this.placements.push({ entry: word, row, col, dir });
+    this.placements.push({ entry: p.entry, row: p.row, col: p.col, dir: p.dir });
+    this.entries.add(p.entry);
   }
 
-  /** Best legal crossing placement for `word`, favouring many crossings and a centred grid. */
+  /** Best legal crossing placement for `word`, favouring crossings, incidental entries and a centred grid. */
   bestPlacement(word: string, rng: Rng): Spot | null {
     let best: Spot | null = null;
     let bestScore = -Infinity;
@@ -128,17 +159,15 @@ class Grid {
         const dir: Direction = used === ACROSS ? "down" : "across";
         const r = Math.floor(idx / this.size);
         const c = idx % this.size;
-        const row = dir === "down" ? r - i : r;
-        const col = dir === "across" ? c - i : c;
-        const crossings = this.crossings(word, row, col, dir);
-        if (crossings < 1) continue;
-        const centreR = row + (dir === "down" ? (word.length - 1) / 2 : 0);
-        const centreC = col + (dir === "across" ? (word.length - 1) / 2 : 0);
+        const spot = this.check(word, dir === "down" ? r - i : r, dir === "across" ? c - i : c, dir);
+        if (!spot || spot.crossings < 1) continue;
+        const centreR = spot.row + (dir === "down" ? (word.length - 1) / 2 : 0);
+        const centreC = spot.col + (dir === "across" ? (word.length - 1) / 2 : 0);
         const spread = Math.abs(centreR - mid) + Math.abs(centreC - mid);
-        const score = crossings * 10 - spread * 0.4 + rng();
+        const score = (spot.crossings + spot.incidental.length) * 10 - spread * 0.4 + rng();
         if (score > bestScore) {
           bestScore = score;
-          best = { entry: word, row, col, dir, crossings };
+          best = spot;
         }
       }
     }
@@ -147,16 +176,14 @@ class Grid {
 }
 
 /** Greedy build; `pool[0]` is the spine, placed across the middle row. */
-function buildOnce(pool: string[], size: number, target: number, rng: Rng): Grid | null {
+function buildOnce(pool: string[], size: number, target: number, valid: ReadonlySet<string>, rng: Rng): Grid | null {
   const [first, ...remaining] = pool;
   if (!first) return null;
-  const grid = new Grid(size);
-  const row = Math.floor(size / 2);
-  const col = Math.floor(rng() * (size - first.length + 1));
-  grid.place(first, row, col, "across");
+  const grid = new Grid(size, valid);
+  grid.place({ entry: first, row: Math.floor(size / 2), col: Math.floor(rng() * (size - first.length + 1)), dir: "across" });
 
   // Each step considers the next WINDOW placeable words and keeps the one that
-  // crosses the most entries, which packs grids far tighter than first-fit.
+  // adds the most crossings and incidental entries, which packs grids tightly.
   const WINDOW = 24;
   while (grid.placements.length < target) {
     let bestIdx = -1;
@@ -164,10 +191,11 @@ function buildOnce(pool: string[], size: number, target: number, rng: Rng): Grid
     let bestScore = -Infinity;
     let seen = 0;
     for (let i = 0; i < remaining.length && seen < WINDOW; i++) {
+      if (grid.entries.has(remaining[i]!)) continue;
       const spot = grid.bestPlacement(remaining[i]!, rng);
       if (!spot) continue;
       seen++;
-      const score = spot.crossings * 4 - spot.entry.length * 0.15 + rng();
+      const score = (spot.crossings + spot.incidental.length * 1.5) * 4 - spot.entry.length * 0.15 + rng();
       if (score > bestScore) {
         bestScore = score;
         bestIdx = i;
@@ -175,7 +203,8 @@ function buildOnce(pool: string[], size: number, target: number, rng: Rng): Grid
       }
     }
     if (!bestSpot) break;
-    grid.place(bestSpot.entry, bestSpot.row, bestSpot.col, bestSpot.dir);
+    grid.place(bestSpot);
+    for (const p of bestSpot.incidental) grid.place(p);
     remaining.splice(bestIdx, 1);
   }
   return grid;
@@ -188,6 +217,7 @@ function buildOnce(pool: string[], size: number, target: number, rng: Rng): Grid
 export function generateLayout(pool: string[], size: number, rng: Rng, attempts = 16): Layout | null {
   const target = targetWordCount(size);
   const fitting = pool.filter((w) => w.length <= size);
+  const valid = new Set(fitting);
   const sampleSize = Math.min(fitting.length, target * 14);
   let best: Grid | null = null;
   let bestScore = -Infinity;
@@ -198,7 +228,7 @@ export function generateLayout(pool: string[], size: number, rng: Rng, attempts 
     let spine = sample.findIndex((w) => w.length >= Math.ceil(size * 0.55));
     if (spine < 0) spine = sample.reduce((best, w, i) => (w.length > sample[best]!.length ? i : best), 0);
     if (spine > 0) sample.unshift(...sample.splice(spine, 1));
-    const grid = buildOnce(sample, size, target, rng);
+    const grid = buildOnce(sample, size, target, valid, rng);
     if (!grid) continue;
     const score = grid.placements.length * 3 + grid.filled;
     if (score > bestScore) {

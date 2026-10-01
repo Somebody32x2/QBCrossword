@@ -1,22 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { AnswerView, ClueView, Direction, Leaderboard, PuzzleView, SessionView, SubmitResult } from "../../../shared/types";
-import { DIFFICULTIES } from "../../../shared/taxonomy";
+import type { AnswerView, ClueView, Direction, PuzzleView, SessionView, SubmitResult } from "../../../shared/types";
 import { api, ApiError } from "../api";
 import { Dropdown } from "../components/Dropdown";
-import { LeaderboardTable } from "../components/LeaderboardTable";
 import { Modal } from "../components/Modal";
 import { formatMs, storage } from "../util";
-import { ClueText, clueWords, initialWords, useClueReader, wordsForSentences, type ClueWords } from "./ClueText";
+import { SolvedModal } from "./SolvedModal";
 
 interface Clue extends ClueView {
   cells: number[];
-  cw: ClueWords;
 }
 
 interface Progress {
   letters: string[];
   revealed: boolean[];
-  shown: Record<string, number>;
   elapsed: number;
   result: SubmitResult | null;
 }
@@ -24,13 +20,13 @@ interface Progress {
 type Scope = "cell" | "word" | "puzzle";
 
 const other = (d: Direction): Direction => (d === "across" ? "down" : "across");
+const shortKey = (c: ClueView) => `${c.number}${c.dir === "across" ? "A" : "D"}`;
 
 function prepare(puzzle: PuzzleView) {
   const { width } = puzzle;
   const clues: Clue[] = puzzle.clues.map((c) => ({
     ...c,
     cells: Array.from({ length: c.length }, (_, i) => (c.row + (c.dir === "down" ? i : 0)) * width + c.col + (c.dir === "across" ? i : 0)),
-    cw: clueWords(c.sentences),
   }));
   const byKey = new Map(clues.map((c) => [c.key, c]));
   const cellClues: Array<Partial<Record<Direction, string>>> = puzzle.cells.map(() => ({}));
@@ -59,7 +55,6 @@ export function Crossword({
   const [letters, setLetters] = useState<string[]>(() => (saved?.letters.length === n ? saved.letters : Array(n).fill("")));
   const [revealed, setRevealed] = useState<boolean[]>(() => (saved?.revealed.length === n ? saved.revealed : Array(n).fill(false)));
   const [wrong, setWrong] = useState<boolean[]>(() => Array(n).fill(false));
-  const [shown, setShown] = useState<Record<string, number>>(() => saved?.shown ?? {});
   const [result, setResult] = useState<SubmitResult | null>(saved?.result ?? null);
   const [assisted, setAssisted] = useState(session?.assisted ?? false);
   const [sel, setSel] = useState<{ cell: number; dir: Direction }>(() => {
@@ -69,7 +64,6 @@ export function Crossword({
   const [toast, setToast] = useState<{ kind: "info" | "danger" | "success"; text: string } | null>(null);
   const [confirm, setConfirm] = useState<(() => void) | null>(null);
   const [showDone, setShowDone] = useState(false);
-  const [sentenceGoal, setSentenceGoal] = useState(3);
 
   const solved = result?.solved === true;
   const answers: Record<string, AnswerView> | undefined = result?.answers;
@@ -94,17 +88,14 @@ export function Crossword({
 
   // ---- Persistence -------------------------------------------------------
   useEffect(() => {
-    storage.set(progressKey, { letters, revealed, shown, elapsed, result } satisfies Progress);
-  }, [progressKey, letters, revealed, shown, elapsed, result]);
+    storage.set(progressKey, { letters, revealed, elapsed, result } satisfies Progress);
+  }, [progressKey, letters, revealed, elapsed, result]);
 
-  // ---- Selection helpers ---------------------------------------------------
+  // ---- Selection ---------------------------------------------------------
   const activeKey = cellClues[sel.cell]?.[sel.dir] ?? cellClues[sel.cell]?.[other(sel.dir)];
   const active = activeKey ? byKey.get(activeKey) : undefined;
   const crossKey = active ? cellClues[sel.cell]?.[other(active.dir)] : undefined;
   const activeCells = useMemo(() => new Set(active?.cells ?? []), [active]);
-
-  const shownFor = useCallback((c: Clue) => shown[c.key] ?? initialWords(c.cw), [shown]);
-  const setShownFor = useCallback((key: string, words: number) => setShown((s) => ({ ...s, [key]: words })), []);
 
   const select = useCallback(
     (cell: number, dir?: Direction) => {
@@ -127,8 +118,7 @@ export function Crossword({
   const stepClue = (delta: number) => {
     if (!active) return;
     const idx = clues.findIndex((c) => c.key === active.key);
-    const next = clues[(idx + delta + clues.length) % clues.length]!;
-    selectClue(next);
+    selectClue(clues[(idx + delta + clues.length) % clues.length]!);
   };
 
   // ---- Editing -----------------------------------------------------------
@@ -142,8 +132,7 @@ export function Crossword({
       setWrong((w) => (w[cell] ? w.map((v, i) => (i === cell ? false : v)) : w));
     }
     const pos = active.cells.indexOf(cell);
-    const after = active.cells.slice(pos + 1);
-    const nextEmpty = after.find((i) => !letters[i] && i !== cell);
+    const nextEmpty = active.cells.slice(pos + 1).find((i) => !letters[i] && i !== cell);
     if (nextEmpty !== undefined) setSel({ cell: nextEmpty, dir: active.dir });
     else if (pos < active.cells.length - 1) setSel({ cell: active.cells[pos + 1]!, dir: active.dir });
     else {
@@ -304,54 +293,70 @@ export function Crossword({
       .catch((e: unknown) => flash("danger", e instanceof ApiError ? e.message : "Could not submit the grid."));
   }, [letters, solved, puzzle, session?.id]);
 
-  const applySentenceGoal = (all: boolean) => {
-    setShown((s) => {
-      const next = { ...s };
-      for (const c of clues) {
-        const goal = all ? c.cw.words.length : wordsForSentences(c.cw, sentenceGoal);
-        next[c.key] = Math.max(shownFor(c), goal);
-      }
-      return next;
-    });
-  };
-
-  // Keep the active clue visible in its list without scrolling the page.
+  // Keep the active and crossing clues visible in their lists without scrolling the page.
   const listRefs = useRef(new Map<string, HTMLLIElement>());
   useEffect(() => {
-    const el = activeKey ? listRefs.current.get(activeKey) : undefined;
-    const box = el?.closest(".qbx-clue-scroll");
-    if (!el || !(box instanceof HTMLElement)) return;
-    const top = el.offsetTop - box.offsetTop;
-    if (top < box.scrollTop || top + el.offsetHeight > box.scrollTop + box.clientHeight) {
-      box.scrollTo({ top: top - box.clientHeight / 3, behavior: "smooth" });
+    for (const key of [activeKey, crossKey]) {
+      const el = key ? listRefs.current.get(key) : undefined;
+      const box = el?.closest(".qbx-clue-scroll");
+      if (!el || !(box instanceof HTMLElement)) continue;
+      const top = el.offsetTop - box.offsetTop;
+      if (top < box.scrollTop || top + el.offsetHeight > box.scrollTop + box.clientHeight) {
+        box.scrollTo({ top: top - box.clientHeight / 3, behavior: "smooth" });
+      }
     }
-  }, [activeKey]);
+  }, [activeKey, crossKey]);
 
   const ranked = session && !assisted;
 
   // ---- Render ------------------------------------------------------------
-  const renderClue = (c: Clue) => (
-    <ClueItem
-      key={c.key}
-      clue={c}
-      shown={shownFor(c)}
-      onShow={(w) => setShownFor(c.key, w)}
-      state={c.key === activeKey ? "active" : c.key === crossKey ? "cross" : undefined}
-      complete={!solved && c.cells.every((i) => letters[i])}
-      answer={answers?.[c.key]}
-      onSelect={() => {
-        selectClue(c);
-        focusGrid();
-      }}
-      register={(el) => {
-        if (el) listRefs.current.set(c.key, el);
-        else listRefs.current.delete(c.key);
-      }}
-    />
+  const clueList = (dir: Direction) => (
+    <div className="qbx-clue-col">
+      <h6 className="qbx-clue-heading">{dir === "across" ? "Across" : "Down"}</h6>
+      <ol className="qbx-clue-scroll list-unstyled mb-0">
+        {clues
+          .filter((c) => c.dir === dir)
+          .map((c) => {
+            const answer = answers?.[c.key];
+            const state = c.key === activeKey ? " qbx-clue-active" : c.key === crossKey ? " qbx-clue-cross" : "";
+            const complete = !solved && c.cells.every((i) => letters[i]);
+            return (
+              <li
+                key={c.key}
+                ref={(el) => {
+                  if (el) listRefs.current.set(c.key, el);
+                  else listRefs.current.delete(c.key);
+                }}
+                className={`qbx-clue${state}${complete ? " qbx-clue-complete" : ""}`}
+                onClick={() => {
+                  selectClue(c);
+                  focusGrid();
+                }}
+              >
+                <span className="qbx-clue-num">{c.number}</span>
+                <span className="qbx-clue-body">
+                  {c.text}
+                  {answer && (
+                    <span className="qbx-answer d-block small mt-1">
+                      <b>{answer.answer}</b>{" "}
+                      <a
+                        href={`https://www.qbreader.org/db/${c.sourceType}/?_id=${c.sourceId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        title={`${c.setName} on QB Reader`}
+                      >
+                        <i className="bi bi-box-arrow-up-right" aria-label="View the question on QB Reader" />
+                      </a>
+                    </span>
+                  )}
+                </span>
+              </li>
+            );
+          })}
+      </ol>
+    </div>
   );
-
-  const across = clues.filter((c) => c.dir === "across");
-  const down = clues.filter((c) => c.dir === "down");
 
   return (
     <div className="qbx-puzzle">
@@ -377,12 +382,12 @@ export function Crossword({
             )}
           </div>
           <Dropdown label="Check" disabled={solved}>
-            <button type="button" className="dropdown-item" onClick={() => doCheck("cell")}>Letter</button>
+            <button type="button" className="dropdown-item" onClick={() => doCheck("cell")}>Square</button>
             <button type="button" className="dropdown-item" onClick={() => doCheck("word")}>Word</button>
             <button type="button" className="dropdown-item" onClick={() => doCheck("puzzle")}>Puzzle</button>
           </Dropdown>
           <Dropdown label="Reveal" disabled={solved}>
-            <button type="button" className="dropdown-item" onClick={() => doReveal("cell")}>Letter</button>
+            <button type="button" className="dropdown-item" onClick={() => doReveal("cell")}>Square</button>
             <button type="button" className="dropdown-item" onClick={() => doReveal("word")}>Word</button>
             <button type="button" className="dropdown-item" onClick={() => doReveal("puzzle")}>Puzzle</button>
           </Dropdown>
@@ -411,14 +416,19 @@ export function Crossword({
         </div>
       )}
 
-      <div className="row g-4">
-        <div className="col-lg-7">
-          {active && (
-            <ClueBar key={active.key} clue={active} shown={shownFor(active)} onShow={(w) => setShownFor(active.key, w)} onFocus={focusGrid} />
-          )}
+      <div className="qbx-board">
+        <div className="qbx-board-grid">
+          <div className="qbx-clue-bar" onClick={focusGrid}>
+            {active && (
+              <>
+                <span className="qbx-clue-bar-key">{shortKey(active)}</span>
+                <span className="qbx-clue-bar-text">{active.text}</span>
+              </>
+            )}
+          </div>
           <div
             className="qbx-grid-wrap"
-            style={{ maxWidth: `min(${puzzle.width * 2.75}rem, max(20rem, calc((100dvh - 18rem) * ${puzzle.width / puzzle.height})))` }}
+            style={{ maxWidth: `min(${puzzle.width * 4}rem, max(18rem, calc((100dvh - 17rem) * ${puzzle.width / puzzle.height})))` }}
           >
             <div
               className={`qbx-grid${paused ? " qbx-grid-paused" : ""}`}
@@ -436,7 +446,6 @@ export function Crossword({
                   i === sel.cell ? "qbx-selected" : activeCells.has(i) ? "qbx-in-word" : "",
                   wrong[i] ? "qbx-wrong" : "",
                   revealed[i] ? "qbx-revealed" : "",
-                  solved ? "qbx-solved" : "",
                 ].join(" ");
                 return (
                   <div
@@ -472,36 +481,9 @@ export function Crossword({
             </div>
           </div>
         </div>
-
-        <div className="col-lg-5">
-          <div className="d-flex align-items-center gap-2 mb-2 small flex-wrap">
-            <label htmlFor="qbx-sentences" className="text-body-secondary">
-              Show
-            </label>
-            <input
-              id="qbx-sentences"
-              type="number"
-              min={1}
-              max={12}
-              className="form-control form-control-sm"
-              style={{ width: "4.25rem" }}
-              value={sentenceGoal}
-              onChange={(e) => setSentenceGoal(Math.max(1, Math.min(12, Number(e.target.value) || 1)))}
-            />
-            <span className="text-body-secondary">sentences</span>
-            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => applySentenceGoal(false)}>
-              Expand
-            </button>
-            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => applySentenceGoal(true)}>
-              Expand all
-            </button>
-          </div>
-          <div className="qbx-clue-scroll">
-            <h6 className="qbx-clue-heading">Across</h6>
-            <ul className="list-group list-group-flush mb-3">{across.map(renderClue)}</ul>
-            <h6 className="qbx-clue-heading">Down</h6>
-            <ul className="list-group list-group-flush">{down.map(renderClue)}</ul>
-          </div>
+        <div className="qbx-board-clues">
+          {clueList("across")}
+          {clueList("down")}
         </div>
       </div>
 
@@ -543,175 +525,5 @@ export function Crossword({
         />
       )}
     </div>
-  );
-}
-
-function ClueItem({
-  clue: c,
-  shown,
-  onShow,
-  state,
-  complete,
-  answer,
-  onSelect,
-  register,
-}: {
-  clue: Clue;
-  shown: number;
-  onShow: (words: number) => void;
-  state?: "active" | "cross";
-  complete: boolean;
-  answer?: AnswerView;
-  onSelect: () => void;
-  register: (el: HTMLLIElement | null) => void;
-}) {
-  const reader = useClueReader(c.cw, shown, onShow);
-  return (
-    <li
-      ref={register}
-      className={`qbx-clue list-group-item${state ? ` qbx-clue-${state}` : ""}${complete ? " qbx-clue-complete" : ""}`}
-      onMouseEnter={reader.onMouseEnter}
-      onMouseLeave={reader.onMouseLeave}
-      onClick={() => {
-        reader.more();
-        onSelect();
-      }}
-    >
-      <span className="qbx-clue-num">{c.number}</span>
-      <div className="qbx-clue-body">
-        <ClueText cw={c.cw} shown={shown} /> <span className="text-body-secondary small text-nowrap">({c.enumeration})</span>
-        {answer && (
-          <div className="qbx-answer small mt-1">
-            <b>ANSWER:</b> {answer.answer}{" "}
-            <a href={`https://www.qbreader.org/db/tossup/?_id=${c.qbreaderId}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
-              <i className="bi bi-box-arrow-up-right" aria-label="View on QB Reader" />
-            </a>
-          </div>
-        )}
-        <div className="qbx-clue-meta small text-body-secondary">
-          {c.category}
-          {c.subcategory !== c.category ? ` / ${c.subcategory}` : ""}
-          {c.alternateSubcategory ? ` / ${c.alternateSubcategory}` : ""}
-          {" · "}
-          {c.setName}
-        </div>
-      </div>
-    </li>
-  );
-}
-
-function ClueBar({ clue, shown, onShow, onFocus }: { clue: Clue; shown: number; onShow: (words: number) => void; onFocus: () => void }) {
-  const reader = useClueReader(clue.cw, shown, onShow);
-  return (
-    <div
-      className="qbx-clue-bar mb-2"
-      onMouseEnter={reader.onMouseEnter}
-      onMouseLeave={reader.onMouseLeave}
-      onClick={() => {
-        reader.more();
-        onFocus();
-      }}
-      title="Hover to keep reading, click for more"
-    >
-      <div className="qbx-clue-bar-label">
-        {clue.number} {clue.dir === "across" ? "Across" : "Down"}
-        <span className="text-body-secondary fw-normal ms-2 small">
-          {clue.category} · {DIFFICULTIES.find(([d]) => d === clue.difficulty)?.[1]}
-        </span>
-      </div>
-      <div className="qbx-clue-bar-text">
-        <ClueText cw={clue.cw} shown={shown} /> <span className="text-body-secondary text-nowrap">({clue.enumeration})</span>
-      </div>
-    </div>
-  );
-}
-
-function SolvedModal({
-  puzzle,
-  result,
-  elapsed,
-  sessionId,
-  onClose,
-  onClaimed,
-}: {
-  puzzle: PuzzleView;
-  result: SubmitResult;
-  elapsed: number;
-  sessionId?: string;
-  onClose: () => void;
-  onClaimed: () => void;
-}) {
-  const [initials, setInitials] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [board, setBoard] = useState<Leaderboard | null>(null);
-  const daily = puzzle.kind === "daily" && puzzle.date;
-  const ms = result.ms ?? elapsed;
-
-  useEffect(() => {
-    if (daily) api.leaderboard(puzzle.date!).then(setBoard, () => setBoard(null));
-  }, [daily, puzzle.date]);
-
-  const valid = /^[A-Za-z]{3}$/.test(initials);
-  const claim = async () => {
-    if (!sessionId || !valid) return;
-    setBusy(true);
-    setError(null);
-    try {
-      setBoard(await api.claim(sessionId, initials));
-      onClaimed();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Could not save your score.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal title="Solved!" onClose={onClose}>
-      <p className="fs-5 mb-3">
-        You finished in <b className="font-monospace">{formatMs(ms)}</b>.
-      </p>
-      {daily && result.assisted && <p className="text-body-secondary">You checked or revealed, so this solve is unranked.</p>}
-      {daily && result.qualifies && (
-        <form
-          className="mb-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void claim();
-          }}
-        >
-          <label htmlFor="qbx-initials" className="form-label">
-            You made today's top 10. Enter your initials:
-          </label>
-          <div className="input-group" style={{ maxWidth: "16rem" }}>
-            <input
-              id="qbx-initials"
-              className={`form-control qbx-initials${error ? " is-invalid" : ""}`}
-              maxLength={3}
-              pattern="[A-Za-z]{3}"
-              autoComplete="off"
-              autoFocus
-              value={initials}
-              onChange={(e) => setInitials(e.target.value.replace(/[^A-Za-z]/g, "").slice(0, 3))}
-              placeholder="ABC"
-            />
-            <button className="btn btn-primary" type="submit" disabled={!valid || busy}>
-              Save
-            </button>
-          </div>
-          <div className="form-text">Three letters, A to Z.</div>
-          {error && <div className="text-danger small mt-1">{error}</div>}
-        </form>
-      )}
-      {daily && result.claimed && <p className="text-success">Your time is on the board.</p>}
-      {daily && board && (
-        <>
-          <h6 className="mt-2">Today's leaderboard</h6>
-          <LeaderboardTable entries={board.entries} highlightMs={result.claimed ? ms : undefined} compact />
-        </>
-      )}
-      {!daily && <p className="mb-0 text-body-secondary">Answers and links to each tossup on QB Reader are now shown with the clues.</p>}
-    </Modal>
   );
 }

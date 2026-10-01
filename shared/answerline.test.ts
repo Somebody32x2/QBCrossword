@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parseAnswerline } from "./answerline";
-import { redactAnswer, splitSentences } from "./cluetext";
+import { redactAnswer, splitSentences, toHint } from "./cluetext";
 
 describe("parseAnswerline", () => {
   const entry = (html: string) => parseAnswerline(html)?.entry ?? null;
@@ -51,5 +51,22 @@ describe("clue text", () => {
       "____ laws and ____ mechanics, unlike Leibniz.",
     );
     expect(redactAnswer("The king of the constructor guild.", ["King of the constructor"])).toBe("The ____ of the ____ guild.");
+  });
+});
+
+describe("toHint", () => {
+  test("turns a giveaway into a standalone clue", () => {
+    expect(toHint("For 10 points, name this composer of the Brandenburg Concertos.", ["Bach"])).toBe(
+      "This composer of the Brandenburg Concertos.",
+    );
+    expect(toHint("Name these particles that come in six flavors.", ["quark"])).toBe("These particles that come in six flavors.");
+  });
+
+  test("rejects sentences that lean on earlier context or blank out the answer", () => {
+    expect(toHint("He also wrote this play about a salesman.", ["Miller"])).toBeNull();
+    expect(toHint("Lucky appears in that play by this author.", ["Beckett"])).toBeNull();
+    expect(toHint("This other branch of Buddhism stresses meditation.", ["Zen"])).toBeNull();
+    expect(toHint("This Wittig reaction uses a phosphonium ylide.", ["Wittig"])).toBeNull();
+    expect(toHint("Wolves raised the twins in a cave.", ["Rome"])).toBeNull();
   });
 });

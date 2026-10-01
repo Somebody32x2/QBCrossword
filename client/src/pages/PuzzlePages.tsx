@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { DailyInfo, PuzzleView, SessionView } from "../../../shared/types";
+import { ANY_DIFFICULTY } from "../../../shared/taxonomy";
 import { api, ApiError } from "../api";
 import { Crossword } from "../crossword/Crossword";
 import { Link } from "../router";
@@ -78,8 +79,8 @@ export function DailyPage() {
         {header}
         <p className="mt-3" style={{ maxWidth: "60ch" }}>
           {info.weekday}'s puzzle is a {info.width}x{info.height} grid with {info.wordCount} clues at{" "}
-          <b>{info.difficultyLabel}</b> difficulty. Each clue is a quizbowl tossup: you see the first sentence or two, hover
-          to keep reading, and click for more.
+          <b>{info.difficultyLabel}</b> difficulty. Every clue is one sentence from a quizbowl question, one that writers
+          have used about that answer several times.
         </p>
         <p className="text-body-secondary small" style={{ maxWidth: "60ch" }}>
           The timer starts when you press start and keeps running on the server. Checking or revealing any letter makes your
@@ -114,6 +115,12 @@ export function CustomPuzzlePage({ id }: { id: string }) {
       <div className="text-body-secondary small">
         {puzzle.width}x{puzzle.height} · {puzzle.clues.length} clues ·{" "}
         <span className="badge text-bg-primary fw-normal">{puzzle.difficultyLabel}</span>
+        {puzzle.widened > 0 && (
+          <span className="ms-1" title="No full grid could be filled at the requested levels, so nearby levels were allowed.">
+            {puzzle.widened >= ANY_DIFFICULTY ? "(any difficulty)" : `(widened ±${puzzle.widened})`}
+          </span>
+        )}
+        {puzzle.style === "freeform" && <span className="ms-1">· loose grid</span>}
         {puzzle.config.categories.length > 0 && <> · {puzzle.config.categories.join(", ")}</>}
         {puzzle.kind === "custom" && (
           <button

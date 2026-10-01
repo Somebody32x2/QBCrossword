@@ -1,4 +1,4 @@
-/** Tossup text processing: power-mark removal, answer redaction, sentence splitting. */
+/** Question text processing: sentence splitting, single-sentence hints, answer redaction, clue tokens. */
 
 import { toLetters } from "./answerline";
 
@@ -68,7 +68,62 @@ export function redactAnswer(text: string, answerWords: string[]): string {
   });
 }
 
-export function prepareQuestion(questionSanitized: string, answerWords: string[]): string[] {
-  const text = questionSanitized.replace(/\(\s*[*+]\s*\)/g, " ").replace(/\s+/g, " ").trim();
-  return splitSentences(redactAnswer(text, answerWords));
+/** Sentences of a question with power marks and bonus part values ("[10]", "[10e]") removed. */
+export function questionSentences(text: string): string[] {
+  return splitSentences(
+    text
+      .replace(/\(\s*[*+]\s*\)/g, " ")
+      .replace(/^\s*\[\s*\d+\s*[emh]?\s*\]\s*/i, "")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
+}
+
+const GIVEAWAY =
+  /^(?:for\s+(?:10|ten|15|fifteen|20|twenty|5|five)\s+points(?:\s+each)?\s*[,:.-]?\s*|ftp\s*[,:]?\s*)?(?:name|identify|give|what\s+is|who\s+is|who\s+was|what\s+was)\s+(this|these)\b/i;
+const POINTS_PREFIX = /^(?:for\s+(?:10|ten|15|fifteen|20|twenty|5|five)\s+points(?:\s+each)?\s*[,:.-]?\s*|ftp\s*[,:]?\s*)/i;
+/** Sentences opening like this lean on earlier context ("He also wrote this play"). */
+const CONTEXT_OPENER = /^(?:he|she|it|they|his|her|its|their|them|that|those|both|also|then|later|thus|however|another)\b/i;
+/** Back-references to something named in an earlier sentence ("in that play", "this other branch"). */
+const BACK_REFERENCE =
+  /\b(?:that|those)\s+(?:play|novel|work|poem|book|opera|film|movie|painting|story|piece|song|album|battle|war|event|man|woman|person|figure|character|city|country|text|essay|series|show|game|team|ruler|king|queen|god|goddess)\b|\bthe (?:former|latter|aforementioned)\b|\b(?:this|these) other\b|\banother of (?:these|those)\b/i;
+export const MIN_HINT_WORDS = 5;
+export const MAX_HINT_WORDS = 40;
+
+/**
+ * A sentence as a standalone crossword clue, or null when it cannot stand
+ * alone. "For 10 points, name this composer of X." becomes "This composer of X."
+ */
+export function toHint(sentence: string, answerWords: string[]): string | null {
+  let s = sentence.trim();
+  const g = GIVEAWAY.exec(s);
+  if (g) s = g[1]![0]!.toUpperCase() + g[1]!.slice(1).toLowerCase() + s.slice(g[0].length);
+  else s = s.replace(POINTS_PREFIX, "");
+  s = s.replace(/^[a-z]/, (c) => c.toUpperCase());
+  if (!/\b(?:this|these)\b/i.test(s) || CONTEXT_OPENER.test(s)) return null;
+  const words = s.split(" ").length;
+  if (words < MIN_HINT_WORDS || words > MAX_HINT_WORDS) return null;
+  if (/description acceptable|before (?:it is )?(?:read|mentioned)|\bprompt\b/i.test(s) || BACK_REFERENCE.test(s)) return null;
+  const redacted = redactAnswer(s, answerWords);
+  // A blanked-out word reads as a gap rather than a clue; plenty of hints remain without one.
+  return redacted.includes(REDACTION) ? null : redacted;
+}
+
+/** Words too generic in quizbowl to say two sentences give the same clue. */
+const GENERIC = wordTable(
+  "this these that those which what who whom whose where when while with without into onto from than then they them their " +
+    "there here have has had having been being were was are is be also only after before during about over under between " +
+    "name names named points point work works figure man woman one two three first second last other another some such " +
+    "called known title titular character characters people thing things time times year years made make makes many much " +
+    "more most later early each both same said says used uses using including include includes like well very just even",
+);
+
+/** Content tokens for clue similarity: lowercased, generic words dropped, plural "s" folded. */
+export function clueTokens(sentence: string): string[] {
+  const out = new Set<string>();
+  for (const raw of sentence.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/)) {
+    if (raw.length < 3 || GENERIC[raw] || STOPWORDS[raw]) continue;
+    out.add(raw.length > 4 && raw.endsWith("s") && !raw.endsWith("ss") ? raw.slice(0, -1) : raw);
+  }
+  return [...out];
 }

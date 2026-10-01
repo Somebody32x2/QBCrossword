@@ -9,15 +9,23 @@ export function About() {
     <div style={{ maxWidth: "65ch" }}>
       <h1 className="h3">About</h1>
       <p>
-        QB Crossword builds crosswords whose clues are quizbowl tossups. Each answer in the grid is the required part of a
-        tossup's answerline, and the clue is the tossup itself with the answer blanked out.
+        QB Crossword builds American-style crosswords whose clues come from quizbowl questions. Each answer is the required
+        part of a tossup or bonus answerline, and its clue is a single sentence from a question about that answer.
       </p>
-      <h2 className="h5 mt-4">Reading clues</h2>
+      <h2 className="h5 mt-4">How clues are chosen</h2>
       <ul>
-        <li>Each clue starts with its first sentence or two, the hardest part of the tossup.</li>
-        <li>Hover over a clue to keep reading. It starts slowly and speeds up.</li>
-        <li>Click a clue to reveal another sentence or two, or use the sentence control above the clue list.</li>
-        <li>The number in parentheses gives the length of each word in the answer.</li>
+        <li>
+          A sentence is only used if the same clue appears in at least three different questions on that answer, so clues
+          are the well-known facts writers keep returning to, not one-off trivia.
+        </li>
+        <li>
+          A clue's difficulty is its question's level, shifted by up to three levels by where the sentence sits: opening
+          lines count as harder, giveaways as easier.
+        </li>
+        <li>
+          Grids are fully crossed, with black squares, whenever a fill can be found. If not, the difficulty range is widened
+          by up to two levels on each side, and the puzzle says so. Very narrow subject choices fall back to a looser grid.
+        </li>
       </ul>
       <h2 className="h5 mt-4">Controls</h2>
       <p>
@@ -61,7 +69,7 @@ export function About() {
         <a href="https://www.qbreader.org" target="_blank" rel="noreferrer">
           QB Reader
         </a>
-        . The questions were written by their original tournament authors. Every solved clue links to its tossup on QB
+        . The questions were written by their original tournament authors. Every solved clue links to its question on QB
         Reader.
       </p>
     </div>

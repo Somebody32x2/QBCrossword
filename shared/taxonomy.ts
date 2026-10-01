@@ -72,10 +72,12 @@ export const TAXONOMY: Record<string, Record<string, string[]>> = {
 };
 
 export const SIZES: ReadonlyArray<{ size: number; label: string }> = [
-  { size: 7, label: "Mini" },
-  { size: 11, label: "Small" },
-  { size: 15, label: "Standard" },
-  { size: 19, label: "Large" },
+  { size: 5, label: "Mini" },
+  { size: 7, label: "Small" },
+  { size: 9, label: "Medium" },
+  { size: 11, label: "Large" },
+  { size: 13, label: "X-Large" },
+  { size: 15, label: "Full" },
 ];
 
 export interface DailyRule {
@@ -86,13 +88,16 @@ export interface DailyRule {
 
 /** Daily puzzle rules by weekday (0 = Sunday), ramping up through the week. */
 export const DAILY_SCHEDULE: readonly DailyRule[] = [
-  { size: 19, difficulties: [4, 5], label: "Hard High School" },
+  { size: 15, difficulties: [4, 5], label: "Hard High School" },
   { size: 11, difficulties: [2], label: "Easy High School" },
-  { size: 15, difficulties: [3], label: "Regular High School" },
-  { size: 15, difficulties: [4], label: "Hard High School" },
-  { size: 15, difficulties: [5], label: "National High School" },
-  { size: 15, difficulties: [6], label: "Easy College" },
+  { size: 11, difficulties: [3], label: "Regular High School" },
+  { size: 13, difficulties: [4], label: "Hard High School" },
+  { size: 13, difficulties: [5], label: "National High School" },
+  { size: 13, difficulties: [6], label: "Easy College" },
   { size: 15, difficulties: [7, 8], label: "Regionals College" },
 ];
 
 export const DAILY_TIMEZONE = "America/New_York";
+
+/** Widening step that drops the difficulty filter: any level may be used. */
+export const ANY_DIFFICULTY = 10;

@@ -1,38 +1,96 @@
-/** Puzzle construction from the clue store, public views, and answer checking. */
+/** Puzzle construction from the hint store, public views, and answer checking. */
 
 import type { AnswerView, ClueView, DailyInfo, PuzzleConfig, PuzzleView } from "../shared/types";
-import { DAILY_SCHEDULE, DAILY_TIMEZONE, DIFFICULTIES } from "../shared/taxonomy";
-import type { ClueRow, ClueStore } from "./clues";
-import { generateLayout, seededRng, targetWordCount, type Rng } from "./generator";
+import { ANY_DIFFICULTY, DAILY_SCHEDULE, DAILY_TIMEZONE, DIFFICULTIES } from "../shared/taxonomy";
+import type { FillRequest, FillResponse } from "./fillWorker";
+import { seededRng } from "./generator";
+import type { HintFilter, HintStore } from "./hints";
 import type { PuzzleRecord, StoredLayout } from "./store";
 
 export class NotEnoughCluesError extends Error {}
 
-/** Grids under this share of the word target read as sparse; ask for broader filters instead. */
-const MIN_FILL = 0.45;
+/** Free-form fallbacks with fewer words than this per grid square are too sparse to serve. */
+const MIN_WORDS_PER_CELL = 0.08;
 
-export function buildLayout(clues: ClueStore, config: PuzzleConfig, rng: Rng): StoredLayout {
-  const { order, rowids } = clues.candidates(config, config.size, rng);
-  const layout = generateLayout(order, config.size, rng);
-  if (!layout || layout.placements.length < targetWordCount(config.size) * MIN_FILL) {
+/** Seconds of fill search per grid size before falling back, for the requested pool. */
+const FILL_BUDGET_MS: Record<number, number> = { 5: 1500, 7: 2000, 9: 2500, 11: 3500, 13: 4500, 15: 6000 };
+
+// ---------------------------------------------------------------------------
+// Fill workers
+
+const WORKERS = 2;
+const workers = Array.from({ length: WORKERS }, () => new Worker(new URL("./fillWorker.ts", import.meta.url).href));
+const idle = [...workers];
+const queue: Array<{ request: Omit<FillRequest, "id">; resolve: (r: FillResponse) => void }> = [];
+const pending = new Map<number, (r: FillResponse) => void>();
+let nextId = 1;
+
+function pump(): void {
+  while (idle.length && queue.length) {
+    const worker = idle.pop()!;
+    const job = queue.shift()!;
+    const id = nextId++;
+    pending.set(id, (r) => {
+      idle.push(worker);
+      job.resolve(r);
+      pump();
+    });
+    worker.postMessage({ ...job.request, id } satisfies FillRequest);
+  }
+}
+for (const w of workers) w.onmessage = (e: MessageEvent<FillResponse>) => pending.get(e.data.id)?.(e.data);
+
+const runFill = (request: Omit<FillRequest, "id">) => new Promise<FillResponse>((resolve) => (queue.push({ request, resolve }), pump()));
+
+// ---------------------------------------------------------------------------
+
+/** The requested levels plus `by` levels either side; Pop Culture (0) is only kept if asked for. */
+function widen(difficulties: number[], by: number): number[] {
+  if (difficulties.length === 0 || by === 0) return difficulties;
+  const out = new Set<number>();
+  for (const d of difficulties) for (let k = d - by; k <= d + by; k++) if (k >= 1 && k <= 10) out.add(k);
+  if (difficulties.includes(0)) out.add(0);
+  return [...out].sort((a, b) => a - b);
+}
+
+/** Widening steps tried in order, the last lifting the difficulty filter entirely. */
+const WIDTHS = [0, 1, 2, ANY_DIFFICULTY];
+
+/**
+ * Build a grid for the config. An American fill is tried on the requested
+ * pool, then with the difficulty widened step by step; if none fills, the
+ * widest pool is packed free-form instead.
+ */
+export async function buildLayout(hints: HintStore, config: PuzzleConfig, seed: string, budgetScale = 1): Promise<StoredLayout> {
+  const rng = seededRng(`${seed}:pool`);
+  const widths = config.difficulties.length ? WIDTHS : [0];
+  const filters: HintFilter[] = widths.map((w) => ({ ...config, difficulties: widen(config.difficulties, w) }));
+  const candidates = filters.map((f) => hints.candidates(f, config.size, rng));
+  const budget = (FILL_BUDGET_MS[config.size] ?? 6000) * budgetScale;
+  const result = await runFill({
+    size: config.size,
+    pools: candidates.map((c) => c.order),
+    seed,
+    budgetsMs: widths.map((w) => (w === 0 ? budget : budget * 0.5)),
+  });
+  const { layout } = result;
+  if (!layout || layout.placements.length < config.size * config.size * MIN_WORDS_PER_CELL) {
     throw new NotEnoughCluesError(
-      `Only ${order.length} distinct answers match these settings, not enough for a ${config.size}x${config.size} grid.`,
+      `Only ${candidates[result.pool]!.order.length} distinct answers match these subjects, not enough for a ${config.size}x${config.size} grid.`,
     );
   }
+  const pool = candidates[result.pool]!;
   return {
     width: layout.width,
     height: layout.height,
-    placements: layout.placements.map((p) => {
-      const ids = rowids.get(p.entry)!;
-      const row = clues.byRowid(ids[Math.floor(rng() * ids.length)]!)!;
-      return { ...p, clueId: row.id };
-    }),
+    style: result.style,
+    widened: widths[result.pool]!,
+    placements: layout.placements.map((p) => ({ ...p, hintId: hints.pick(pool.hints.get(p.entry)!, rng) })),
   };
 }
 
 export function newPuzzleId(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(9));
-  return Buffer.from(bytes).toString("base64url");
+  return Buffer.from(crypto.getRandomValues(new Uint8Array(9))).toString("base64url");
 }
 
 /** Cell numbers in reading order, shared by the view and the checker. */
@@ -68,12 +126,12 @@ export function difficultyLabel(difficulties: number[]): string {
   return names.length <= 2 ? names.join(" + ") : `${names[0]} to ${names[names.length - 1]}`;
 }
 
-export function puzzleView(p: PuzzleRecord, clues: ClueStore, label?: string): PuzzleView {
+export function puzzleView(p: PuzzleRecord, hints: HintStore, label?: string): PuzzleView {
   const { cells, numberAt } = numberLayout(p.layout);
   const views: ClueView[] = [];
   for (const pl of p.layout.placements) {
-    const row = clues.get(pl.clueId);
-    if (!row) continue;
+    const hint = hints.get(pl.hintId);
+    if (!hint) continue;
     const number = numberAt(pl.row, pl.col);
     views.push({
       key: `${number}-${pl.dir}`,
@@ -82,14 +140,14 @@ export function puzzleView(p: PuzzleRecord, clues: ClueStore, label?: string): P
       row: pl.row,
       col: pl.col,
       length: pl.entry.length,
-      enumeration: row.enumeration,
-      sentences: JSON.parse(row.sentences) as string[],
-      category: row.category,
-      subcategory: row.subcategory,
-      alternateSubcategory: row.alternate_subcategory,
-      difficulty: row.difficulty,
-      setName: row.set_name,
-      qbreaderId: row.id,
+      text: hint.text,
+      category: hint.category,
+      subcategory: hint.subcategory,
+      alternateSubcategory: hint.alternate_subcategory,
+      difficulty: hint.difficulty,
+      setName: hint.set_name,
+      sourceType: hint.source_type,
+      sourceId: hint.source_id,
     });
   }
   views.sort((a, b) => (a.dir === b.dir ? a.number - b.number : a.dir === "across" ? -1 : 1));
@@ -98,6 +156,8 @@ export function puzzleView(p: PuzzleRecord, clues: ClueStore, label?: string): P
     kind: p.kind,
     date: p.date,
     difficultyLabel: label ?? difficultyLabel(p.config.difficulties),
+    widened: p.layout.widened,
+    style: p.layout.style,
     config: p.config,
     width: p.layout.width,
     height: p.layout.height,
@@ -106,15 +166,15 @@ export function puzzleView(p: PuzzleRecord, clues: ClueStore, label?: string): P
   };
 }
 
-export function answers(p: PuzzleRecord, clues: ClueStore): Record<string, AnswerView> {
+export function answers(p: PuzzleRecord, hints: HintStore): Record<string, AnswerView> {
   const { numberAt } = numberLayout(p.layout);
   const out: Record<string, AnswerView> = {};
   for (const pl of p.layout.placements) {
-    const row: ClueRow | null = clues.get(pl.clueId);
+    const hint = hints.get(pl.hintId);
     out[`${numberAt(pl.row, pl.col)}-${pl.dir}`] = {
       entry: pl.entry,
-      display: row?.display ?? pl.entry,
-      answer: row?.answer ?? pl.entry,
+      display: hint?.display ?? pl.entry,
+      answer: hint?.answer ?? pl.entry,
     };
   }
   return out;
@@ -151,25 +211,31 @@ export function weekdayOf(date: string): number {
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+/** The daily is built once; this budget multiplier gives it far longer to find a fill. */
+const DAILY_BUDGET_SCALE = 3;
+const dailyBuilds = new Map<string, Promise<PuzzleRecord>>();
+
 export function getOrCreateDaily(
   date: string,
-  clues: ClueStore,
+  hints: HintStore,
   store: { getDaily(date: string): PuzzleRecord | null; insertPuzzle(p: PuzzleRecord): void },
-): PuzzleRecord {
+): Promise<PuzzleRecord> {
   const existing = store.getDaily(date);
-  if (existing) return existing;
-  const rule = DAILY_SCHEDULE[weekdayOf(date)]!;
-  const config: PuzzleConfig = {
-    size: rule.size,
-    difficulties: rule.difficulties,
-    categories: [],
-    subcategories: [],
-    alternateSubcategories: [],
-  };
-  const layout = buildLayout(clues, config, seededRng(`daily:${date}`));
-  store.insertPuzzle({ id: `daily-${date}`, kind: "daily", date, config, layout });
-  // A concurrent request may have inserted first; the stored row wins either way.
-  return store.getDaily(date)!;
+  if (existing) return Promise.resolve(existing);
+  // Concurrent first requests share one build.
+  let build = dailyBuilds.get(date);
+  if (!build) {
+    const rule = DAILY_SCHEDULE[weekdayOf(date)]!;
+    const config: PuzzleConfig = { size: rule.size, difficulties: rule.difficulties, categories: [], subcategories: [], alternateSubcategories: [] };
+    build = buildLayout(hints, config, `daily:${date}`, DAILY_BUDGET_SCALE)
+      .then((layout) => {
+        store.insertPuzzle({ id: `daily-${date}`, kind: "daily", date, config, layout });
+        return store.getDaily(date)!;
+      })
+      .finally(() => dailyBuilds.delete(date));
+    dailyBuilds.set(date, build);
+  }
+  return build;
 }
 
 export function dailyInfo(p: PuzzleRecord): DailyInfo {
